@@ -91,23 +91,23 @@ static int app_init(void)
   signal(SIGINT, app_signal_handler);
 
 	if (!config->receive_data_only) {
-    // g_app.video_file_parser =
-    //     create_file_parser(video_data_type_to_file_type(config->video_data_type), config->send_video_file_path, NULL);
-    // if (!g_app.video_file_parser) {
-    //   LOGE("create file parser for video failed");
-    //   return -1;
-    // }
+    g_app.video_file_parser =
+        create_file_parser(video_data_type_to_file_type(config->video_data_type), config->send_video_file_path, NULL);
+    if (!g_app.video_file_parser) {
+      LOGE("create file parser for video failed");
+      return -1;
+    }
 
 		parser_cfg.u.audio_cfg.sampleRateHz = config->pcm_sample_rate;
 		parser_cfg.u.audio_cfg.numberOfChannels = config->pcm_channel_num;
 		parser_cfg.u.audio_cfg.framePeriodMs = config->pcm_duration;
 
-    // g_app.audio_file_parser =
-    //     create_file_parser(audio_data_type_to_file_type(config->audio_data_type), config->send_audio_file_path, &parser_cfg);
-    // if (!g_app.audio_file_parser) {
-    //   LOGE("create file parser for audio failed");
-    //   return -1;
-    // }
+    g_app.audio_file_parser =
+        create_file_parser(audio_data_type_to_file_type(config->audio_data_type), config->send_audio_file_path, &parser_cfg);
+    if (!g_app.audio_file_parser) {
+      LOGE("create file parser for audio failed");
+      return -1;
+    }
   }
 
   g_app.video_file_writer = create_file_writer(FILE_TYPE_VIDEO, DEFAULT_RECV_VIDEO_BASENAME);
@@ -505,11 +505,11 @@ int main(int argc, char **argv)
       util_sleep_ms(1000);
       continue;
     }
-    // char record_buf[1024 * 10] = {0};
-    // size_t record_size = record_aac_with_fdk(record_buf, sizeof(record_buf));
-    // if (g_app.b_connected_flag && is_time_to_send_audio(pacer)) {
-    //   app_send_audio(record_buf, record_size);
-    // }
+    char record_buf[1024 * 10] = {0};
+    size_t record_size = record_aac_with_fdk(record_buf, sizeof(record_buf));
+    if (g_app.b_connected_flag && is_time_to_send_audio(pacer)) {
+      app_send_audio(record_buf, record_size);
+    }
     // if (g_app.b_connected_flag && is_time_to_send_video(pacer)) {
     //   app_send_video();
     // }

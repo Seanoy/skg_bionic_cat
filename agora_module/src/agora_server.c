@@ -55,7 +55,7 @@ const char *create_chat_ai_json_data =
     "\"properties\":{"
     "\"channel\":\"%s\","
     "\"token\":\"%s\","
-    "\"agent_rtc_uid\":\"0\","
+    "\"agent_rtc_uid\":\"251156\","
     "\"remote_rtc_uids\":[\"*\"],"
     "\"asr\":{\"language\":\"zh-CN\"},"
     "\"llm\":{"
@@ -753,7 +753,9 @@ int agora_test() {
   agora_openssl_init();
   printf("=== Starting Agora API Tests ===\n\n");
   char agent_id[128] = {0};
-
+  /*
+./agora_module -i a38a96a8b0674f79b17497c068cb24a8 -t 007eJxTYLBb90e+/+zedf/3dzULaVxUSihd/4LDeGVkHO/GK4YqE28qMCQaWyRamiVaJBmYmZukmVsmGZqbWJonG5hZJCcZmSRauK60z2wIZGSIvrieiZEBAkF8YYbk/LyyxEwgWZyfkxpvaGBgYcbAAACIfyTP -c convaiconsole_10086 -u 10086
+  */
   char *token =
       "007eJxTYCgt3Jn74MX0GytOranS3bz8dNL7vqvqT38lLGZNjvj8a+4jBYZEY4tES7NEiyQDM3OTNHPLJENzE0vzZAMzi+QkIxOgeL91ZkMgI4MdsyILIwMEgvjCDMn5eWWJmUCyOD8nNd7QwMDCjIEBAMM9J08=";
   char *channel = "convaiconsole_10086";

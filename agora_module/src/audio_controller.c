@@ -30,10 +30,10 @@ static void write_adts_header(uint8_t *adts, int aac_length, int samplerate, int
     }
 
     int adts_len = aac_length + 7;
-
+    int profile = 2; // AAC-LC
     adts[0] = 0xFF;
     adts[1] = 0xF1;
-    adts[2] = (1 << 6) | (sf_index << 2) | ((channels & 4) >> 2);
+    adts[2] = ((profile - 1) << 6) | (sf_index << 2) | (channels >> 2);
     adts[3] = ((channels & 3) << 6) | (adts_len >> 11);
     adts[4] = (adts_len >> 3) & 0xFF;
     adts[5] = ((adts_len & 7) << 5) | 0x1F;
@@ -172,7 +172,7 @@ cleanup:
 size_t record_aac_with_fdk(uint8_t *aac_data, size_t aac_size) {
     int card = 1, device = 0;
     
-    printf("Recording ...\n");
+    // printf("Recording ...\n");
 
     /* ---- Tinyalsa PCM 配置 ---- */
     struct pcm_config cfg = {
@@ -189,7 +189,7 @@ size_t record_aac_with_fdk(uint8_t *aac_data, size_t aac_size) {
         return -1;
     }
 
-    printf("PCM: %u Hz, %u ch, 16 bits\n", cfg.rate, cfg.channels);
+    // printf("PCM: %u Hz, %u ch, 16 bits\n", cfg.rate, cfg.channels);
 
     /* ---- AAC Encoder 初始化 ---- */
     HANDLE_AACENCODER encoder;
@@ -214,7 +214,7 @@ size_t record_aac_with_fdk(uint8_t *aac_data, size_t aac_size) {
     AACENC_InfoStruct info;
     aacEncInfo(encoder, &info);
 
-    printf("AAC encoder: LC, %u Hz, %u ch → ADTS\n", cfg.rate, cfg.channels);
+    // printf("AAC encoder: LC, %u Hz, %u ch → ADTS\n", cfg.rate, cfg.channels);
 
     /* 每次读取 PCM period */
     int pcm_bytes = cfg.period_size * cfg.channels * 2;
@@ -263,20 +263,19 @@ size_t record_aac_with_fdk(uint8_t *aac_data, size_t aac_size) {
 
     if (out_args.numOutBytes > 0) {
         write_adts_header(adts, out_args.numOutBytes, cfg.rate, cfg.channels);
-        total_aac_bytes += out_args.numOutBytes + 7;
-        
-        if (total_aac_bytes < aac_size) {
-            memcpy(aac_data + total_aac_bytes - out_args.numOutBytes - 7, adts, 7);
-            memcpy(aac_data + total_aac_bytes - out_args.numOutBytes, aac_buf, out_args.numOutBytes);
+        size_t offset = total_aac_bytes;
+        if (offset + 7 + out_args.numOutBytes <= aac_size) {
+            memcpy(aac_data + offset, adts, 7);
+            memcpy(aac_data + offset + 7, aac_buf, out_args.numOutBytes);
+            total_aac_bytes += 7 + out_args.numOutBytes;
         } else {
-            fprintf(stderr, "Buffer too small for recorded AAC data\n");
-            total_aac_bytes -= out_args.numOutBytes + 7;
+            // 缓冲区不足
         }
     }
     
     free(pcm_buf);
     pcm_close(pcm);
     aacEncClose(&encoder);
-    printf("Recording finished, total AAC bytes: %zu\n", total_aac_bytes);
+    // printf("Recording finished, total AAC bytes: %zu\n", total_aac_bytes);
     return total_aac_bytes;
 }
