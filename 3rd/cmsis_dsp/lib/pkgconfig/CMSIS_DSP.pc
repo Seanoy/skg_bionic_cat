@@ -1,0 +1,10 @@
+prefix=/home/finnox/sophgo/tools/skg_dependencies/dependencies/cmsis-dsp/install
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: CMSIS_DSP
+Description: ARM CMSIS-DSP Library
+Version: 1.16.2
+Cflags: -I${includedir}/cmsis-dsp -I${includedir}/cmsis-core
+Libs: -L${libdir} -lCMSISDSP

@@ -1,0 +1,13 @@
+# 交叉编译配置模块，顶层 CMakeLists.txt 只需 include 本文件
+option(USE_CROSS_COMPILE "使用交叉编译器" ON)
+set(CROSS_COMPILE_BIN "/home/sean/cv184x_sdk/host-tools/gcc/arm-gnu-toolchain-11.3.rel1-x86_64-arm-none-linux-musleabihf/bin" CACHE PATH "交叉编译器 bin 目录")
+set(CROSS_COMPILE_PREFIX "arm-none-linux-musleabihf-" CACHE STRING "交叉编译器前缀")
+if(USE_CROSS_COMPILE)
+    set(CMAKE_SYSTEM_NAME Linux)
+    set(CMAKE_SYSTEM_PROCESSOR arm)
+    set(CMAKE_C_COMPILER   "${CROSS_COMPILE_BIN}/${CROSS_COMPILE_PREFIX}gcc"   CACHE FILEPATH "" FORCE)
+    set(CMAKE_CXX_COMPILER "${CROSS_COMPILE_BIN}/${CROSS_COMPILE_PREFIX}g++"   CACHE FILEPATH "" FORCE)
+    set(CMAKE_AR           "${CROSS_COMPILE_BIN}/${CROSS_COMPILE_PREFIX}ar"    CACHE FILEPATH "" FORCE)
+    set(CMAKE_RANLIB       "${CROSS_COMPILE_BIN}/${CROSS_COMPILE_PREFIX}ranlib" CACHE FILEPATH "" FORCE)
+    set(CMAKE_STRIP        "${CROSS_COMPILE_BIN}/${CROSS_COMPILE_PREFIX}strip"  CACHE FILEPATH "" FORCE)
+endif()
