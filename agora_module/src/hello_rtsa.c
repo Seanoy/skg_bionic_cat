@@ -10,7 +10,6 @@
 
 #include "app_config.h"
 #include "agora_server.h"
-#include "audio_controller.h"
 
 typedef struct {
   app_config_t config;
@@ -45,8 +44,8 @@ static app_t g_app = {
         .send_video_file_path       = NULL,
 
         // audio related config
-        .audio_data_type            = AUDIO_DATA_TYPE_AACLC,
-        .audio_codec_type           = AUDIO_CODEC_DISABLED,
+        .audio_data_type            = AUDIO_DATA_TYPE_PCM,
+        .audio_codec_type           = AUDIO_CODEC_TYPE_OPUS,
         .send_audio_file_path       = NULL,
 
         // pcm related config
@@ -116,27 +115,27 @@ static int app_init(void)
   return 0;
 }
 
-static int app_send_audio(char *data, size_t len)
+static int app_send_audio(void)
 {
   app_config_t *config = &g_app.config;
   audio_frame_info_t info = { 0 };
   info.data_type = config->audio_data_type;
-  // frame_t frame;
+  frame_t frame;
 
-  // if (file_parser_obtain_frame(g_app.audio_file_parser, &frame) < 0) {
-  //   LOGE("The file parser failed to obtain audio frame");
-  //   return -1;
-  // }
-
-  // API: send audio data
-  int rval = agora_rtc_send_audio_data(g_app.conn_id, data, len, &info);
-  if (rval < 0) {
-    LOGE("Failed to send audio data, reason: %s", agora_rtc_err_2_str(rval));
-    // file_parser_release_frame(g_app.audio_file_parser, &frame);
+  if (file_parser_obtain_frame(g_app.audio_file_parser, &frame) < 0) {
+    LOGE("The file parser failed to obtain audio frame");
     return -1;
   }
 
-  // file_parser_release_frame(g_app.audio_file_parser, &frame);
+  // API: send audio data
+  int rval = agora_rtc_send_audio_data(g_app.conn_id, frame.ptr, frame.len, &info);
+  if (rval < 0) {
+    LOGE("Failed to send audio data, reason: %s", agora_rtc_err_2_str(rval));
+    file_parser_release_frame(g_app.audio_file_parser, &frame);
+    return -1;
+  }
+
+  file_parser_release_frame(g_app.audio_file_parser, &frame);
   return 0;
 }
 
@@ -263,7 +262,6 @@ static void __on_audio_data(connection_id_t conn_id, const uint32_t uid, uint16_
 {
   LOGD("[conn-%u] on_audio_data: uid %u sent_ts %u data_type %d, len %zu", conn_id, uid, sent_ts,
        info_ptr->data_type, len);
-  record_aac_with_fdk((uint8_t *)data, len);
   write_file(g_app.audio_file_writer, info_ptr->data_type, data, len);
 }
 
@@ -505,14 +503,12 @@ int main(int argc, char **argv)
       util_sleep_ms(1000);
       continue;
     }
-    char record_buf[1024 * 10] = {0};
-    size_t record_size = record_aac_with_fdk(record_buf, sizeof(record_buf));
     if (g_app.b_connected_flag && is_time_to_send_audio(pacer)) {
-      app_send_audio(record_buf, record_size);
+      app_send_audio();
     }
-    // if (g_app.b_connected_flag && is_time_to_send_video(pacer)) {
-    //   app_send_video();
-    // }
+    if (g_app.b_connected_flag && is_time_to_send_video(pacer)) {
+      app_send_video();
+    }
     // sleep and wait until time is up for next send
     wait_before_next_send(pacer);
   }
