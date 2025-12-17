@@ -156,25 +156,25 @@ static int app_init(void)
 
   signal(SIGINT, app_signal_handler);
 
-	if (!config->receive_data_only) {
-    g_app.video_file_parser =
-        create_file_parser(video_data_type_to_file_type(config->video_data_type), config->send_video_file_path, NULL);
-    if (!g_app.video_file_parser) {
-      LOGE("create file parser for video failed");
-      return -1;
-    }
+	// if (!config->receive_data_only) {
+  //   g_app.video_file_parser =
+  //       create_file_parser(video_data_type_to_file_type(config->video_data_type), config->send_video_file_path, NULL);
+  //   if (!g_app.video_file_parser) {
+  //     LOGE("create file parser for video failed");
+  //     return -1;
+  //   }
 
-		parser_cfg.u.audio_cfg.sampleRateHz = config->pcm_sample_rate;
-		parser_cfg.u.audio_cfg.numberOfChannels = config->pcm_channel_num;
-		parser_cfg.u.audio_cfg.framePeriodMs = config->pcm_duration;
+	// 	parser_cfg.u.audio_cfg.sampleRateHz = config->pcm_sample_rate;
+	// 	parser_cfg.u.audio_cfg.numberOfChannels = config->pcm_channel_num;
+	// 	parser_cfg.u.audio_cfg.framePeriodMs = config->pcm_duration;
 
-    g_app.audio_file_parser =
-        create_file_parser(audio_data_type_to_file_type(config->audio_data_type), config->send_audio_file_path, &parser_cfg);
-    if (!g_app.audio_file_parser) {
-      LOGE("create file parser for audio failed");
-      return -1;
-    }
-  }
+  //   g_app.audio_file_parser =
+  //       create_file_parser(audio_data_type_to_file_type(config->audio_data_type), config->send_audio_file_path, &parser_cfg);
+  //   if (!g_app.audio_file_parser) {
+  //     LOGE("create file parser for audio failed");
+  //     return -1;
+  //   }
+  // }
 
   record_init();
 
