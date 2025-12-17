@@ -10,6 +10,7 @@
 
 #include "app_config.h"
 #include "agora_server.h"
+#include <asoundlib.h>
 
 typedef struct {
   app_config_t config;
@@ -23,6 +24,11 @@ typedef struct {
   connection_id_t conn_id;
   bool b_stop_flag;
   bool b_connected_flag;
+
+  // === 新增：实时录音相关 ===
+  struct pcm *capture_pcm;
+  void *capture_buffer;
+  size_t capture_period_bytes;
 } app_t;
 
 static app_t g_app = {
@@ -69,7 +75,68 @@ static app_t g_app = {
 
     .b_stop_flag            = false,
     .b_connected_flag       = false,
+
+    .capture_pcm                    = NULL,
+    .capture_buffer                 = NULL,
+    .capture_period_bytes           = 0,
 };
+
+
+void record_init(void) {
+  app_config_t *config = &g_app.config;
+  struct pcm_config capture_config = {
+      .channels = config->pcm_channel_num,
+      .rate = config->pcm_sample_rate,
+      .format = PCM_FORMAT_S16_LE,
+      .period_size = 1024,
+      .period_count = 4,
+      .start_threshold = 0,
+      .stop_threshold = 0,
+      .silence_threshold = 0,
+      .silence_size = 0,
+  };
+  // 根据你的板子修改 card 和 device（常见：card=2 或 card=3）
+  unsigned int capture_card = 2;
+  unsigned int capture_device = 0;
+
+  g_app.capture_pcm = pcm_open(capture_card, capture_device, PCM_IN, &capture_config);
+  if (!g_app.capture_pcm || !pcm_is_ready(g_app.capture_pcm)) {
+      LOGE("无法打开录音设备 card=%u device=%u: %s",
+            capture_card, capture_device,
+            pcm_get_error(g_app.capture_pcm));
+      if (g_app.capture_pcm) pcm_close(g_app.capture_pcm);
+      return;
+  }
+
+  g_app.capture_period_bytes = config->pcm_channel_num * 2 * config->pcm_sample_rate * config->pcm_duration / 1000;
+  g_app.capture_buffer = malloc(g_app.capture_period_bytes);
+  if (!g_app.capture_buffer) {
+      LOGE("malloc capture buffer failed");
+      pcm_close(g_app.capture_pcm);
+      g_app.capture_pcm = NULL;
+      return;
+  }
+
+  LOGI("实时录音设备打开成功: card=%u device=%u, %u Hz, %u 通道, period=%zu bytes",
+        capture_card, capture_device,
+        config->pcm_sample_rate, config->pcm_channel_num,
+        g_app.capture_period_bytes);
+}
+
+void record_deinit(void)
+{
+    if (g_app.capture_buffer) {
+        free(g_app.capture_buffer);
+        g_app.capture_buffer = NULL;
+    }
+
+    if (g_app.capture_pcm) {
+        pcm_close(g_app.capture_pcm);
+        g_app.capture_pcm = NULL;
+    }
+
+    g_app.capture_period_bytes = 0;
+}
 
 static void app_signal_handler(int sig)
 {
@@ -108,6 +175,8 @@ static int app_init(void)
       return -1;
     }
   }
+
+  record_init();
 
   g_app.video_file_writer = create_file_writer(FILE_TYPE_VIDEO, DEFAULT_RECV_VIDEO_BASENAME);
   g_app.audio_file_writer = create_file_writer(FILE_TYPE_AUDIO, DEFAULT_RECV_AUDIO_BASENAME);
@@ -277,7 +346,7 @@ static void __on_video_data(connection_id_t conn_id, const uint32_t uid, uint16_
 {
   LOGD("[conn-%u] on_video_data: uid %u sent_ts %u data_type %d frame_type %d stream_type %d len %zu",
        conn_id, uid, sent_ts, info_ptr->data_type, info_ptr->frame_type, info_ptr->stream_type, len);
-  write_file(g_app.video_file_writer, info_ptr->data_type, data, len);
+  // write_file(g_app.video_file_writer, info_ptr->data_type, data, len);
 }
 
 static void __on_target_bitrate_changed(connection_id_t conn_id, uint32_t target_bps)
@@ -471,7 +540,8 @@ int main(int argc, char **argv)
  // ./agora_module -i a38a96a8b0674f79b17497c068cb24a8 -t 007eJxTYCgt3Jn74MX0GytOranS3bz8dNL7vqvqT38lLGZNjvj8a+4jBYZEY4tES7NEiyQDM3OTNHPLJENzE0vzZAMzi+QkIxOgeL91ZkMgI4MdsyILIwMEgvjCDMn5eWWJmUCyOD8nNd7QwMDCjIEBAMM9J08= -c convaiconsole_10086 -u 10086
   // 创建对话式智能体
   printf("Sending JOIN request...\n");
-  if (send_join_request(p_token, config->p_channel, agent_id, sizeof(agent_id)) != 0) {
+  uint32_t remote_uid = 251156;
+  if (send_join_request(p_token, config->p_channel, remote_uid, agent_id, sizeof(agent_id)) != 0) {
     printf("✗ JOIN request failed\n");
   }
 
@@ -503,12 +573,27 @@ int main(int argc, char **argv)
       util_sleep_ms(1000);
       continue;
     }
+    if (!g_app.capture_pcm) {
+        LOGE("Capture PCM device not opened!");
+        return -1;
+    }
+
+    if (pcm_read(g_app.capture_pcm, g_app.capture_buffer, g_app.capture_period_bytes) != 0) {
+        LOGE("pcm_read failed: %s", pcm_get_error(g_app.capture_pcm));
+        return -1;
+    }
     if (g_app.b_connected_flag && is_time_to_send_audio(pacer)) {
-      app_send_audio();
+      audio_frame_info_t info = { 0 };
+      info.data_type = config->audio_data_type;
+
+      // API: send audio data
+      int rval = agora_rtc_send_audio_data(g_app.conn_id, g_app.capture_buffer, g_app.capture_period_bytes, &info);
+      if (rval < 0) {
+        LOGE("Failed to send audio data, reason: %s", agora_rtc_err_2_str(rval));
+        return -1;
+      }
     }
-    if (g_app.b_connected_flag && is_time_to_send_video(pacer)) {
-      app_send_video();
-    }
+
     // sleep and wait until time is up for next send
     wait_before_next_send(pacer);
   }
@@ -526,6 +611,9 @@ int main(int argc, char **argv)
 
   // 12. API: fini rtc sdk
   agora_rtc_fini();
+
+// 关闭录音设备
+  record_deinit();
 
   // 13. app clean up
   pacer_destroy(pacer);

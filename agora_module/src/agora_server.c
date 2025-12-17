@@ -55,7 +55,7 @@ const char *create_chat_ai_json_data =
     "\"properties\":{"
     "\"channel\":\"%s\","
     "\"token\":\"%s\","
-    "\"agent_rtc_uid\":\"251156\","
+    "\"agent_rtc_uid\":\"%d\","
     "\"remote_rtc_uids\":[\"*\"],"
     "\"asr\":{\"language\":\"zh-CN\"},"
     "\"llm\":{"
@@ -463,7 +463,7 @@ static int parse_response_json(const char *json_str)
  * @param buf_size     out_agent_id 缓冲区大小
  * @return 0 成功，<0 失败
  */
-int send_join_request(const char *token, const char *channel,
+int send_join_request(const char *token, const char *channel, uint32_t uid,
                       char *out_agent_id, size_t buf_size) {
   if (!token || !channel || !out_agent_id || buf_size < 128) {
     fprintf(stderr, "Invalid parameters for join request\n");
@@ -472,7 +472,7 @@ int send_join_request(const char *token, const char *channel,
 
   /* 动态构造 JSON（使用传入的 token / channel） */
   char *json_body = NULL;
-  if (asprintf(&json_body, create_chat_ai_json_data, channel, channel, token) <
+  if (asprintf(&json_body, create_chat_ai_json_data, channel, channel, token, uid) <
       0) {
     fprintf(stderr, "asprintf failed\n");
     return -1;
@@ -762,7 +762,7 @@ int agora_test() {
 
   // 创建对话式智能体
   printf("Sending JOIN request...\n");
-  if (send_join_request(token, channel, agent_id, sizeof(agent_id)) != 0) {
+  if (send_join_request(token, channel, 251156, agent_id, sizeof(agent_id)) != 0) {
     printf("✗ JOIN request failed\n");
     ret = 1;
   }
