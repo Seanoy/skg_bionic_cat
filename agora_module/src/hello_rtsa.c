@@ -11,6 +11,30 @@
 #include "app_config.h"
 #include "agora_server.h"
 #include <asoundlib.h>
+#include <pthread.h>
+#include <stdbool.h>
+#include <stdatomic.h>  // 需要包含原子操作头文件
+
+// 简单环形缓冲区（建议大小：至少能存 500ms ~ 1s 数据，避免 underrun）
+#define RING_BUFFER_FRAMES (16000 * 1)  // 1秒数据
+#define RING_BUFFER_BYTES  (RING_BUFFER_FRAMES * 2)  // 16bit mono = 2 bytes/sample
+
+typedef struct {
+    struct pcm *playback_pcm;
+    void *playback_buffer;
+    size_t playback_period_bytes;
+    size_t playback_period_frames;  // 新增：每个period的帧数
+
+    // 环形缓冲区
+    int16_t ring_buffer[RING_BUFFER_FRAMES];
+    atomic_uint write_pos;  // 使用原子操作
+    atomic_uint read_pos;   // 使用原子操作
+    volatile bool running;
+
+    pthread_t playback_thread;
+} playback_t;
+
+static playback_t g_playback = {0};
 
 typedef struct {
   app_config_t config;
@@ -81,6 +105,97 @@ static app_t g_app = {
     .capture_period_bytes           = 0,
 };
 
+void *playback_thread_func(void *arg) {
+    (void)arg;
+    
+    // 播放空数据，避免初始化时的噪音
+    memset(g_playback.playback_buffer, 0, g_playback.playback_period_bytes);
+    
+    while (g_playback.running) {
+        unsigned int write_pos = atomic_load(&g_playback.write_pos);
+        unsigned int read_pos = atomic_load(&g_playback.read_pos);
+        
+        // 计算可用的帧数
+        unsigned int avail_frames = (write_pos - read_pos + RING_BUFFER_FRAMES) % RING_BUFFER_FRAMES;
+        
+        // 如果有足够的数据，播放一个period
+        if (avail_frames >= g_playback.playback_period_frames) {
+            // 从环形缓冲区拷贝数据到播放缓冲区
+            for (unsigned int i = 0; i < g_playback.playback_period_frames; i++) {
+                ((int16_t*)g_playback.playback_buffer)[i] = g_playback.ring_buffer[read_pos];
+                read_pos = (read_pos + 1) % RING_BUFFER_FRAMES;
+            }
+            
+            // 更新读指针
+            atomic_store(&g_playback.read_pos, read_pos);
+            
+            // 写入音频设备
+            int ret = pcm_write(g_playback.playback_pcm, g_playback.playback_buffer, g_playback.playback_period_bytes);
+            if (ret != 0) {
+                LOGE("pcm_write failed: %s", pcm_get_error(g_playback.playback_pcm));
+                // 可以尝试重新初始化设备
+                pcm_prepare(g_playback.playback_pcm);
+            }
+            
+            // LOGD("Played %zu frames, write_pos=%u, read_pos=%u, avail_frames=%u", 
+            //      g_playback.playback_period_frames, write_pos, read_pos, avail_frames - g_playback.playback_period_frames);
+        } else {
+            // 数据不足，播放静音避免噪音
+            memset(g_playback.playback_buffer, 0, g_playback.playback_period_bytes);
+            pcm_write(g_playback.playback_pcm, g_playback.playback_buffer, g_playback.playback_period_bytes);
+            
+            // 避免忙等待，小睡一下
+            usleep(1000);  // 1ms
+        }
+    }
+    
+    return NULL;
+}
+
+void playback_init(void) {
+    struct pcm_config playback_config = {
+        .channels = 1,
+        .rate = 32000,
+        .format = PCM_FORMAT_S16_LE,
+        .period_size = 1024,
+        .period_count = 4,
+        .start_threshold = 0,
+        .stop_threshold = 0,
+        .silence_threshold = 0,
+        .silence_size = 0,
+    };
+
+    unsigned int playback_card = 1;
+    unsigned int playback_device = 0;
+
+    g_playback.playback_pcm = pcm_open(playback_card, playback_device, PCM_OUT, &playback_config);
+    if (!g_playback.playback_pcm || !pcm_is_ready(g_playback.playback_pcm)) {
+        LOGE("无法打开播放设备 card=%u device=%u: %s",
+              playback_card, playback_device, pcm_get_error(g_playback.playback_pcm));
+        if (g_playback.playback_pcm) pcm_close(g_playback.playback_pcm);
+        return;
+    }
+
+    g_playback.playback_period_bytes = pcm_frames_to_bytes(g_playback.playback_pcm, playback_config.period_size);
+    g_playback.playback_period_frames = playback_config.period_size;  // 计算帧数
+    g_playback.playback_buffer = malloc(g_playback.playback_period_bytes);
+    if (!g_playback.playback_buffer) {
+        LOGE("malloc playback buffer failed");
+        pcm_close(g_playback.playback_pcm);
+        g_playback.playback_pcm = NULL;
+        return;
+    }
+
+    atomic_init(&g_playback.write_pos, 0);
+    atomic_init(&g_playback.read_pos, 0);
+    g_playback.running = true;
+
+    // 启动播放线程
+    pthread_create(&g_playback.playback_thread, NULL, playback_thread_func, NULL);
+
+    LOGI("播放设备打开成功: card=%u device=%u, 16000 Hz, mono, period_frames=%zu", 
+         playback_card, playback_device, g_playback.playback_period_frames);
+}
 
 void record_init(void) {
   app_config_t *config = &g_app.config;
@@ -121,6 +236,23 @@ void record_init(void) {
         capture_card, capture_device,
         config->pcm_sample_rate, config->pcm_channel_num,
         g_app.capture_period_bytes);
+}
+
+void playback_deinit(void) {
+    g_playback.running = false;
+    if (g_playback.playback_thread) {
+        pthread_join(g_playback.playback_thread, NULL);
+    }
+
+    if (g_playback.playback_buffer) {
+        free(g_playback.playback_buffer);
+        g_playback.playback_buffer = NULL;
+    }
+    
+    if (g_playback.playback_pcm) {
+        pcm_close(g_playback.playback_pcm);
+        g_playback.playback_pcm = NULL;
+    }
 }
 
 void record_deinit(void)
@@ -175,7 +307,7 @@ static int app_init(void)
   //     return -1;
   //   }
   // }
-
+  playback_init();
   record_init();
 
   g_app.video_file_writer = create_file_writer(FILE_TYPE_VIDEO, DEFAULT_RECV_VIDEO_BASENAME);
@@ -329,9 +461,35 @@ static void __on_license_failed(connection_id_t conn_id, int reason)
 static void __on_audio_data(connection_id_t conn_id, const uint32_t uid, uint16_t sent_ts,
                             const void *data, size_t len, const audio_frame_info_t *info_ptr)
 {
-  LOGD("[conn-%u] on_audio_data: uid %u sent_ts %u data_type %d, len %zu", conn_id, uid, sent_ts,
-       info_ptr->data_type, len);
-  write_file(g_app.audio_file_writer, info_ptr->data_type, data, len);
+    if (info_ptr->data_type != AUDIO_DATA_TYPE_PCM || !g_playback.playback_pcm) {
+        return;
+    }
+
+    // 计算收到的样本数
+    size_t samples = len / 2;  // 16bit -> samples
+    
+    unsigned int write_pos = atomic_load(&g_playback.write_pos);
+    unsigned int read_pos = atomic_load(&g_playback.read_pos);
+    
+    // 计算环形缓冲区剩余空间
+    unsigned int free_frames = (read_pos - write_pos - 1 + RING_BUFFER_FRAMES) % RING_BUFFER_FRAMES;
+    
+    if (free_frames < samples) {
+        LOGW("free_frames=%u, need_frames=%zu", free_frames, samples);
+        return;
+    }
+    
+    // 写入数据到环形缓冲区
+    const int16_t *src = (const int16_t*)data;
+    for (size_t i = 0; i < samples; i++) {
+        g_playback.ring_buffer[write_pos] = src[i];
+        write_pos = (write_pos + 1) % RING_BUFFER_FRAMES;
+    }
+    
+    // 原子更新写指针
+    atomic_store(&g_playback.write_pos, write_pos);
+    
+    // LOGD("Received %zu samples, write_pos=%u, read_pos=%u", samples, write_pos, read_pos);
 }
 
 static void __on_mixed_audio_data(connection_id_t conn_id, const void *data, size_t len,
@@ -613,6 +771,7 @@ int main(int argc, char **argv)
   agora_rtc_fini();
 
 // 关闭录音设备
+  playback_deinit();
   record_deinit();
 
   // 13. app clean up
