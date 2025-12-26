@@ -757,7 +757,7 @@ int main(int argc, char **argv)
   }
 
   printf("Sending LEAVE request...\n");
-  if (send_leave_request(agent_id) != 0) {
+  if (strlen(agent_id) > 0 && send_leave_request(agent_id) != 0) {
     printf("✗ LEAVE request failed\n");
   }
 
