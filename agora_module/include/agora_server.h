@@ -2,7 +2,8 @@
 #define AGORA_SERVER_H
 
 int send_join_request(const char *token, const char *channel, uint32_t uid,
-                      char *out_agent_id, size_t buf_size);
+                      char *out_agent_id, size_t buf_size,
+                      const char *language_code);
 int send_leave_request(char *agent_id);
 int send_update_request(char *agent_id, char *token);
 int send_get_status_request(char *agent_id);

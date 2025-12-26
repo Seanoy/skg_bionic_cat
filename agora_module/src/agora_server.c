@@ -48,57 +48,128 @@ typedef struct {
 static Config config = {
     .host = HOST, .port = PORT, .app_id = APP_ID, .auth_header = AUTH_HEADER};
 
-// JSON数据定义
-const char *create_chat_ai_json_data =
-    "{"
-    "\"name\":\"%s\","
-    "\"properties\":{"
-    "\"channel\":\"%s\","
-    "\"token\":\"%s\","
-    "\"agent_rtc_uid\":\"%d\","
-    "\"remote_rtc_uids\":[\"*\"],"
-    "\"asr\":{\"language\":\"zh-CN\"},"
-    "\"advanced_features\": {\"enable_aivad\": false},"
-    "\"vad\": {"
-      "\"interrupt_duration_ms\": 160,"
-      "\"prefix_padding_ms\": 300,"
-      "\"silence_duration_ms\": 480,"
-      "\"threshold\": 0.5"
-    "},"
-    "\"llm\":{"
-      "\"url\":\"https://workflow.amazingchat.ai/api/audio/chat\","
-      "\"api_key\":\"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhNzc3ZTZhNi03ZDYyLTRiOTYtODU5MC0xMWJjYjdlYjkxZWQiLCJuYW1lIjoidGhpcmQgY2FsbCIsInR5cGUiOiJhcGlfa2V5IiwiaWF0IjoxNzY2MDMwNzQxLCJqdGkiOiJlZjQ4YjE5ZC1kYTQ1LTQzMDEtODNiYS03NWQxYTMyZjlmZjYifQ.yWyTMYF_UJy7H6iPmYQDZdzFAhX0Cvly7HXWW5yVP8w\","
-      "\"system_messages\":[],"
-      "\"greeting_message\":\"嘿，你今天过得怎么样？\","
-      "\"failure_message\":\"抱歉，我无法回答这个问题。\","
-      "\"max_history\":10,"
-      "\"input_modalities\":[\"text\"],"
-      "\"output_modalities\":[\"text\",\"audio\"],"
-      "\"params\":{"
-        "\"extendData\":{},"
-        "\"agent\":\"Xiaoan\","
-        "\"language\":\"zh\","
-        "\"sampleRate\":16000,"
-        "\"response_mode\":\"streaming\","
-        "\"conversation_id\":\"skg\","
-        "\"user\":\"skg_user1\""
-      "}"
-    "},"
+typedef struct {
+    const char *code;           // 如 "zh-CN", "en-US"
+    const char *asr_language;   // ASR 识别语言
+    const char *greeting;       // 问候语
+    const char *failure;        // 无法回答时的回复
+    const char *agent_id;       // 对应的大模型 agentId
+} LanguageConfig;
+
+static const LanguageConfig languages[] = {
+    {
+        .code          = "zh-CN",
+        .asr_language  = "zh-CN",
+        .greeting      = "嘿，你今天过得怎么样？",
+        .failure       = "抱歉，我无法回答这个问题。",
+        .agent_id      = "4c5e5bbe-1b94-42ed-92d2-bbb71e86e2c3"
+    },
+    {
+        .code          = "en-US",
+        .asr_language  = "en-US",
+        .greeting      = "Hey, I'm right here. How was your day?",
+        .failure       = "Sorry, I can't answer this question.",
+        .agent_id      = "917a2c89-cbb8-4bc0-823c-d7afcafb86a5"
+    },
+    {
+        .code          = "ja-JP",
+        .asr_language  = "ja-JP",
+        .greeting      = "こんにちは、今日はどんな一日でしたか？",
+        .failure       = "申し訳ありませんが、この質問には答えられません。",
+        // .agent_id      = ""
+    },
+    {
+        .code          = "en-IN",
+        .asr_language  = "en-IN",
+        .greeting      = "Hello, how has your day been?",
+        .failure       = "Sorry, I am unable to answer that question.",
+        // .agent_id      = ""
+    },
+};
+
+// 根据语言代码查找配置（返回 NULL 表示不支持）
+static const LanguageConfig *get_language_config(const char *lang_code) {
+    if (!lang_code) return &languages[0];  // 默认中文
+
+    for (size_t i = 0; i < sizeof(languages) / sizeof(languages[0]); i++) {
+        if (strcmp(languages[i].code, lang_code) == 0) {
+            return &languages[i];
+        }
+    }
+    return &languages[0];  // 不支持时 fallback 到中文
+}
+
+// 动态生成 JOIN 请求的 JSON body
+static char *build_join_json_body(const char *channel,
+                                  const char *token,
+                                  uint32_t uid,
+                                  const char *language_code)
+{
+    const LanguageConfig *lang = get_language_config(language_code);
+
+    char *json_body = NULL;
+    int ret = asprintf(&json_body,
+        "{"
+        "\"name\":\"%s\","
+        "\"properties\":{"
+        "\"channel\":\"%s\","
+        "\"token\":\"%s\","
+        "\"agent_rtc_uid\":\"%u\","
+        "\"remote_rtc_uids\":[\"*\"],"
+        "\"asr\":{\"vendor\": \"fengming\",\"language\":\"%s\"},"
+        "\"advanced_features\": {\"enable_aivad\": false},"
+        "\"vad\": {"
+          "\"interrupt_duration_ms\": 160,"
+          "\"prefix_padding_ms\": 300,"
+          "\"silence_duration_ms\": 480,"
+          "\"threshold\": 0.5"
+        "},"
+        "\"llm\":{"
+          "\"url\":\"https://workflow.amazingchat.ai/api/audio/chat\","
+          "\"api_key\":\"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhNzc3ZTZhNi03ZDYyLTRiOTYtODU5MC0xMWJjYjdlYjkxZWQiLCJuYW1lIjoidGhpcmQgY2FsbCIsInR5cGUiOiJhcGlfa2V5IiwiaWF0IjoxNzY2MDMwNzQxLCJqdGkiOiJlZjQ4YjE5ZC1kYTQ1LTQzMDEtODNiYS03NWQxYTMyZjlmZjYifQ.yWyTMYF_UJy7H6iPmYQDZdzFAhX0Cvly7HXWW5yVP8w\","
+          "\"system_messages\":[{\"role\": \"system\", \"content\": \"\"}],"
+          "\"greeting_message\":\"%s\","
+          "\"failure_message\":\"%s\","
+          "\"max_history\":10,"
+          "\"input_modalities\":[\"text\"],"
+          "\"output_modalities\":[\"text\",\"audio\"],"
+          "\"params\":{"
+            "\"extendData\":{},"
+            "\"agentId\": \"%s\","
+            "\"sampleRate\":16000,"
+            "\"response_mode\":\"streaming\","
+            "\"conversation_id\":\"skg\","
+            "\"user\":\"skg_user1\""
+          "}"
+        "},"
         "\"tts\": {"
-      "\"vendor\": \"bytedance\","
-      "\"params\": {"
-        "\"token\": \"YmmCAIH-c_4gmpmEH8IwOkG5bd1kuSeC\","
-        "\"app_id\": \"6435943786\","
-        "\"cluster\": \"volcano_tts\","
-        "\"voice_type\": \"BV001_streaming\","
-        "\"speed_ratio\": 1,"
-        "\"volume_ratio\": 1,"
-        "\"pitch_ratio\": 1,"
-        "\"emotion\": \"\""
+          "\"vendor\": \"bytedance\","
+          "\"params\": {"
+            "\"token\": \"YmmCAIH-c_4gmpmEH8IwOkG5bd1kuSeC\","
+            "\"app_id\": \"6435943786\","
+            "\"cluster\": \"volcano_tts\","
+            "\"voice_type\": \"BV001_streaming\","
+            "\"speed_ratio\": 1,"
+            "\"volume_ratio\": 1,"
+            "\"pitch_ratio\": 1,"
+            "\"emotion\": \"\""
+          "}"
+        "}"
       "}"
-    "}"
-  "}"
-"}";
+    "}",
+        channel,                    // name
+        channel,                    // channel
+        token,                      // token
+        uid,                        // agent_rtc_uid
+        lang->asr_language,         // asr language
+        lang->greeting,             // greeting_message
+        lang->failure,              // failure_message
+        lang->agent_id              // agentId
+    );
+
+    if (ret < 0) return NULL;
+    return json_body;
+}
 
 const char *change_param_json_data =
     "{"
@@ -485,37 +556,38 @@ static int parse_response_json(const char *json_str)
  * @param channel     频道名
  * @param out_agent_id  调用者提供的缓冲区，至少 128 字节
  * @param buf_size     out_agent_id 缓冲区大小
+ * @param language_code 语言代码，如 "zh-CN", "en-US"
  * @return 0 成功，<0 失败
  */
 int send_join_request(const char *token, const char *channel, uint32_t uid,
-                      char *out_agent_id, size_t buf_size) {
-  if (!token || !channel || !out_agent_id || buf_size < 128) {
-    fprintf(stderr, "Invalid parameters for join request\n");
-    return -1;
-  }
+                      char *out_agent_id, size_t buf_size,
+                      const char *language_code)
+{
+    if (!token || !channel || !out_agent_id || buf_size < 128) {
+        fprintf(stderr, "Invalid parameters for join request\n");
+        return -1;
+    }
 
-  /* 动态构造 JSON（使用传入的 token / channel） */
-  char *json_body = NULL;
-  if (asprintf(&json_body, create_chat_ai_json_data, channel, channel, token, uid) <
-      0) {
-    fprintf(stderr, "asprintf failed\n");
-    return -1;
-  }
+    char *json_body = build_join_json_body(channel, token, uid, language_code);
+    if (!json_body) {
+        fprintf(stderr, "Failed to build JSON body\n");
+        return -1;
+    }
 
-  HttpRequest req = {
-      .method = "POST",
-      .path = BASE_PATH "/%s/join",  // %s = app_id
-      .body = json_body,
-      .content_type = "Content-Type: application/json\r\n",
-  };
+    HttpRequest req = {
+        .method = "POST",
+        .path = BASE_PATH "/%s/join",
+        .body = json_body,
+        .content_type = "Content-Type: application/json\r\n",
+    };
 
-  HttpResponse *resp = send_https_request(&req, NULL);
-  free(json_body);
+    HttpResponse *resp = send_https_request(&req, NULL);
+    free(json_body);
 
   if (!resp) return -1;
 
   int ret = -1;
-  if (resp->status_code == 200) {
+  if (resp->status_code == 200 || resp->status_code == 409) {
     char *json = extract_json_from_response(resp->body);
     if (json) {
       cJSON *root = cJSON_Parse(json);
@@ -524,8 +596,13 @@ int send_join_request(const char *token, const char *channel, uint32_t uid,
           if (aid) {
               strncpy(out_agent_id, aid, buf_size - 1);
               out_agent_id[buf_size - 1] = '\0';
-              printf("Successfully obtained agent_id: %s\n", out_agent_id);
-              ret = 0;
+              if (resp->status_code == 200) {
+                printf("Successfully obtained agent_id: %s\n", out_agent_id);
+                ret = 0;
+              } else {
+                printf("Agent already exists with agent_id: %s\n", out_agent_id);
+                ret = 1;
+              }
           } else {
               fprintf(stderr, "agent_id field not found or not string\n");
           }
@@ -778,7 +855,7 @@ int agora_test() {
   printf("=== Starting Agora API Tests ===\n\n");
   char agent_id[128] = {0};
   /*
-./agora_module -i a38a96a8b0674f79b17497c068cb24a8 -t 007eJxTYLBb90e+/+zedf/3dzULaVxUSihd/4LDeGVkHO/GK4YqE28qMCQaWyRamiVaJBmYmZukmVsmGZqbWJonG5hZJCcZmSRauK60z2wIZGSIvrieiZEBAkF8YYbk/LyyxEwgWZyfkxpvaGBgYcbAAACIfyTP -c convaiconsole_10086 -u 10086
+./agora_module  -i a38a96a8b0674f79b17497c068cb24a8 -c convaiconsole_10086 -u 10086 -d -t 007eJxTYAg9cJZLZMciG7V9x77fND6jdn1HgEpmQqv/xa1XX1lWJJ9WYEg0tki0NEu0SDIwMzdJM7dMMjQ3sTRPNjCzSE4yMkm0qFP0y2wIZGTYJKHNwsgAgSC+MENyfl5ZYiaQLM7PSY03NDCwMGNgAACWrySG
   */
   char *token =
       "007eJxTYCgt3Jn74MX0GytOranS3bz8dNL7vqvqT38lLGZNjvj8a+4jBYZEY4tES7NEiyQDM3OTNHPLJENzE0vzZAMzi+QkIxOgeL91ZkMgI4MdsyILIwMEgvjCDMn5eWWJmUCyOD8nNd7QwMDCjIEBAMM9J08=";
@@ -786,7 +863,7 @@ int agora_test() {
 
   // 创建对话式智能体
   printf("Sending JOIN request...\n");
-  if (send_join_request(token, channel, 251156, agent_id, sizeof(agent_id)) != 0) {
+  if (send_join_request(token, channel, 251156, agent_id, sizeof(agent_id), "zh-CN") != 0) {
     printf("✗ JOIN request failed\n");
     ret = 1;
   }

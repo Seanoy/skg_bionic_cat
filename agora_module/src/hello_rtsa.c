@@ -16,8 +16,9 @@
 #include <stdatomic.h>  // 需要包含原子操作头文件
 
 // 简单环形缓冲区（建议大小：至少能存 500ms ~ 1s 数据，避免 underrun）
-#define RING_BUFFER_FRAMES (16000 * 1)  // 1秒数据
+#define RING_BUFFER_FRAMES (16000 * 5)  // 5秒数据
 #define RING_BUFFER_BYTES  (RING_BUFFER_FRAMES * 2)  // 16bit mono = 2 bytes/sample
+#define RECORD_GAIN_FACTOR 4.0f  // 录音放大倍数
 
 typedef struct {
     struct pcm *playback_pcm;
@@ -53,6 +54,8 @@ typedef struct {
   struct pcm *capture_pcm;
   void *capture_buffer;
   size_t capture_period_bytes;
+
+  char desired_lang[16];
 } app_t;
 
 static app_t g_app = {
@@ -103,53 +106,63 @@ static app_t g_app = {
     .capture_pcm                    = NULL,
     .capture_buffer                 = NULL,
     .capture_period_bytes           = 0,
+
+    .desired_lang                   = {0},
 };
 
 void *playback_thread_func(void *arg) {
     (void)arg;
-    
-    // 播放空数据，避免初始化时的噪音
-    memset(g_playback.playback_buffer, 0, g_playback.playback_period_bytes);
-    
+    size_t period_frames = g_playback.playback_period_frames;
+    size_t safe_threshold = period_frames * 2;  // 至少 2 个 period 才播放真实数据
+
     while (g_playback.running) {
-        unsigned int write_pos = atomic_load(&g_playback.write_pos);
-        unsigned int read_pos = atomic_load(&g_playback.read_pos);
-        
-        // 计算可用的帧数
-        unsigned int avail_frames = (write_pos - read_pos + RING_BUFFER_FRAMES) % RING_BUFFER_FRAMES;
-        
-        // 如果有足够的数据，播放一个period
-        if (avail_frames >= g_playback.playback_period_frames) {
-            // 从环形缓冲区拷贝数据到播放缓冲区
-            for (unsigned int i = 0; i < g_playback.playback_period_frames; i++) {
-                ((int16_t*)g_playback.playback_buffer)[i] = g_playback.ring_buffer[read_pos];
+        unsigned int write_pos = atomic_load_explicit(&g_playback.write_pos, memory_order_relaxed);
+        unsigned int read_pos  = atomic_load_explicit(&g_playback.read_pos,  memory_order_relaxed);
+
+        unsigned int avail_frames = (write_pos >= read_pos) ?
+                                    (write_pos - read_pos) :
+                                    (write_pos + RING_BUFFER_FRAMES - read_pos);
+
+        int16_t *buf = (int16_t*)g_playback.playback_buffer;
+
+        if (avail_frames >= safe_threshold) {
+            // 有足够数据，才拷贝真实音频
+            for (size_t i = 0; i < period_frames; i++) {
+                buf[i] = g_playback.ring_buffer[read_pos];
                 read_pos = (read_pos + 1) % RING_BUFFER_FRAMES;
             }
-            
-            // 更新读指针
-            atomic_store(&g_playback.read_pos, read_pos);
-            
-            // 写入音频设备
-            int ret = pcm_write(g_playback.playback_pcm, g_playback.playback_buffer, g_playback.playback_period_bytes);
+            atomic_store_explicit(&g_playback.read_pos, read_pos, memory_order_relaxed);
+
+            int ret = pcm_write(g_playback.playback_pcm, buf, g_playback.playback_period_bytes);
             if (ret != 0) {
-                LOGE("pcm_write failed: %s", pcm_get_error(g_playback.playback_pcm));
-                // 可以尝试重新初始化设备
+                LOGW("pcm_write failed: %s, recovering...", pcm_get_error(g_playback.playback_pcm));
                 pcm_prepare(g_playback.playback_pcm);
             }
-            
-            // LOGD("Played %zu frames, write_pos=%u, read_pos=%u, avail_frames=%u", 
-            //      g_playback.playback_period_frames, write_pos, read_pos, avail_frames - g_playback.playback_period_frames);
         } else {
-            // 数据不足，播放静音避免噪音
-            memset(g_playback.playback_buffer, 0, g_playback.playback_period_bytes);
-            pcm_write(g_playback.playback_pcm, g_playback.playback_buffer, g_playback.playback_period_bytes);
-            
-            // 避免忙等待，小睡一下
-            usleep(1000);  // 1ms
+            // 数据不足，全力填充静音（防止 underrun 噪音）
+            memset(buf, 0, g_playback.playback_period_bytes);
+            pcm_write(g_playback.playback_pcm, buf, g_playback.playback_period_bytes);
+
+            // 缩短睡眠时间，更快响应新数据到来
+            usleep(2000);  // 2ms
         }
     }
-    
     return NULL;
+}
+
+static void playback_start(void) {
+    if (g_playback.running || !g_playback.playback_pcm) return;
+
+    g_playback.running = true;
+    pthread_create(&g_playback.playback_thread, NULL, playback_thread_func, NULL);
+    struct sched_param param;
+    param.sched_priority = sched_get_priority_max(SCHED_FIFO);
+    pthread_setschedparam(g_playback.playback_thread, SCHED_FIFO, &param);
+    // 预填充全部硬件缓冲区的静音（period_count * period）
+    // memset(g_playback.playback_buffer, 0, g_playback.playback_period_bytes);
+    // for (int i = 0; i < 8; i++) {  // 多填几次，确保硬件满载静音
+    //     pcm_write(g_playback.playback_pcm, g_playback.playback_buffer, g_playback.playback_period_bytes);
+    // }
 }
 
 void playback_init(void) {
@@ -188,10 +201,6 @@ void playback_init(void) {
 
     atomic_init(&g_playback.write_pos, 0);
     atomic_init(&g_playback.read_pos, 0);
-    g_playback.running = true;
-
-    // 启动播放线程
-    pthread_create(&g_playback.playback_thread, NULL, playback_thread_func, NULL);
 
     LOGI("播放设备打开成功: card=%u device=%u, 16000 Hz, mono, period_frames=%zu", 
          playback_card, playback_device, g_playback.playback_period_frames);
@@ -268,6 +277,17 @@ void record_deinit(void)
     }
 
     g_app.capture_period_bytes = 0;
+}
+
+static void amplify_audio_data(int16_t *buffer, size_t samples, float gain) {
+    for (size_t i = 0; i < samples; i++) {
+        int32_t sample = buffer[i];
+        sample = (int32_t)(sample * gain);
+        // 限制在 16bit 范围内，防止爆音
+        if (sample > 32767) sample = 32767;
+        if (sample < -32768) sample = -32768;
+        buffer[i] = (int16_t)sample;
+    }
 }
 
 static void app_signal_handler(int sig)
@@ -465,31 +485,40 @@ static void __on_audio_data(connection_id_t conn_id, const uint32_t uid, uint16_
         return;
     }
 
-    // 计算收到的样本数
-    size_t samples = len / 2;  // 16bit -> samples
-    
-    unsigned int write_pos = atomic_load(&g_playback.write_pos);
-    unsigned int read_pos = atomic_load(&g_playback.read_pos);
-    
-    // 计算环形缓冲区剩余空间
+    size_t samples = len / 2;  // 16bit
+    if (samples == 0) return;
+
+    unsigned int write_pos = atomic_load_explicit(&g_playback.write_pos, memory_order_relaxed);
+    unsigned int read_pos  = atomic_load_explicit(&g_playback.read_pos,  memory_order_relaxed);
+
+    // 正确计算剩余空间
     unsigned int free_frames = (read_pos - write_pos - 1 + RING_BUFFER_FRAMES) % RING_BUFFER_FRAMES;
-    
+
     if (free_frames < samples) {
-        LOGW("free_frames=%u, need_frames=%zu", free_frames, samples);
+        LOGW("Ring buffer full, dropping %zu samples", samples);
         return;
     }
-    
-    // 写入数据到环形缓冲区
+
     const int16_t *src = (const int16_t*)data;
     for (size_t i = 0; i < samples; i++) {
         g_playback.ring_buffer[write_pos] = src[i];
         write_pos = (write_pos + 1) % RING_BUFFER_FRAMES;
     }
-    
-    // 原子更新写指针
-    atomic_store(&g_playback.write_pos, write_pos);
-    
-    // LOGD("Received %zu samples, write_pos=%u, read_pos=%u", samples, write_pos, read_pos);
+    atomic_store_explicit(&g_playback.write_pos, write_pos, memory_order_relaxed);
+
+    // 延迟启动播放：缓冲达到 300ms 数据才开始播放
+    static bool playback_started = false;
+    if (!playback_started) {
+        unsigned int buffered = (write_pos >= read_pos) ?
+                                (write_pos - read_pos) :
+                                (write_pos + RING_BUFFER_FRAMES - read_pos);
+
+      if (buffered >= (32000 * 0.5)) {  // 累计一段时间才启动
+          playback_start();
+          playback_started = true;
+          // LOGI("已缓冲 %.0f ms 数据，开始播放", buffered * 1000.0 / 32000);
+      }
+    }
 }
 
 static void __on_mixed_audio_data(connection_id_t conn_id, const void *data, size_t len,
@@ -601,6 +630,41 @@ int main(int argc, char **argv)
     return -1;
   }
 
+  switch (config->area) {
+  case AREA_CODE_CN:
+    snprintf(g_app.desired_lang, sizeof(g_app.desired_lang), "zh-CN");
+    LOGI("Using China area code for RTC service");
+    break;
+  case AREA_CODE_NA:
+    snprintf(g_app.desired_lang, sizeof(g_app.desired_lang), "en-US");
+    LOGI("Using North America area code for RTC service");
+    break;
+  case AREA_CODE_EU:
+    snprintf(g_app.desired_lang, sizeof(g_app.desired_lang), "en-US");
+    LOGI("Using Europe area code for RTC service");
+    break;
+  case AREA_CODE_AS:
+    snprintf(g_app.desired_lang, sizeof(g_app.desired_lang), "en-US");
+    LOGI("Using Asia area code for RTC service");
+    break;
+  case AREA_CODE_JP:
+    snprintf(g_app.desired_lang, sizeof(g_app.desired_lang), "ja-JP");
+    LOGI("Using Japan area code for RTC service");
+    break;
+  case AREA_CODE_IN:
+    snprintf(g_app.desired_lang, sizeof(g_app.desired_lang), "en-IN");
+    LOGI("Using India area code for RTC service");
+    break;
+  case AREA_CODE_GLOB:
+    snprintf(g_app.desired_lang, sizeof(g_app.desired_lang), "en-US");
+    LOGI("Using Global area code for RTC service");
+    break;
+  default:
+    snprintf(g_app.desired_lang, sizeof(g_app.desired_lang), "en-US");
+    LOGW("Using unknown area code %d for RTC service", config->area);
+    break;
+  }
+
   // 3. Set Global private parameters
   if (config->local_ap && config->local_ap[0]) {
     snprintf(priv_params, sizeof(priv_params), "{\"rtc.local_ap_list\": %s}", config->local_ap);
@@ -699,8 +763,22 @@ int main(int argc, char **argv)
   // 创建对话式智能体
   printf("Sending JOIN request...\n");
   uint32_t remote_uid = 251156;
-  if (send_join_request(p_token, config->p_channel, remote_uid, agent_id, sizeof(agent_id)) != 0) {
+  int ret = 0;
+  if (ret = send_join_request(p_token, config->p_channel, remote_uid, agent_id, sizeof(agent_id), g_app.desired_lang) != 0) {
     printf("✗ JOIN request failed\n");
+    if (ret == 1) {
+      printf("Agent already exists, using existing agent_id: %s\n", agent_id);
+      if (strlen(agent_id) > 0 && send_leave_request(agent_id) != 0) {
+        printf("✗ LEAVE request failed\n");
+        goto exit;
+      }
+      if (ret = send_join_request(p_token, config->p_channel, remote_uid, agent_id, sizeof(agent_id), g_app.desired_lang) != 0) {
+        printf("✗ JOIN request failed again\n");
+        goto exit;
+      }
+    } else {
+      goto exit;
+    }
   }
 
   // 7. Set subscription rules for audio and video for a specific user
@@ -733,13 +811,16 @@ int main(int argc, char **argv)
     }
     if (!g_app.capture_pcm) {
         LOGE("Capture PCM device not opened!");
-        return -1;
+        goto exit;
     }
 
     if (pcm_read(g_app.capture_pcm, g_app.capture_buffer, g_app.capture_period_bytes) != 0) {
         LOGE("pcm_read failed: %s", pcm_get_error(g_app.capture_pcm));
-        return -1;
+        goto exit;
     }
+    amplify_audio_data((int16_t*)g_app.capture_buffer, 
+                   g_app.capture_period_bytes / 2, 
+                   RECORD_GAIN_FACTOR);
     if (g_app.b_connected_flag && is_time_to_send_audio(pacer)) {
       audio_frame_info_t info = { 0 };
       info.data_type = config->audio_data_type;
@@ -748,7 +829,7 @@ int main(int argc, char **argv)
       int rval = agora_rtc_send_audio_data(g_app.conn_id, g_app.capture_buffer, g_app.capture_period_bytes, &info);
       if (rval < 0) {
         LOGE("Failed to send audio data, reason: %s", agora_rtc_err_2_str(rval));
-        return -1;
+        goto exit;
       }
     }
 
@@ -756,16 +837,19 @@ int main(int argc, char **argv)
     wait_before_next_send(pacer);
   }
 
+exit:
   printf("Sending LEAVE request...\n");
   if (strlen(agent_id) > 0 && send_leave_request(agent_id) != 0) {
     printf("✗ LEAVE request failed\n");
   }
 
-  // 10. API: leave channel
-  agora_rtc_leave_channel(g_app.conn_id);
+  if (g_app.conn_id != 0) {
+    // 10. API: leave channel
+    agora_rtc_leave_channel(g_app.conn_id);
 
-  // 11: API: Destroy connection
-  agora_rtc_destroy_connection(g_app.conn_id);
+    // 11: API: Destroy connection
+    agora_rtc_destroy_connection(g_app.conn_id);
+  }
 
   // 12. API: fini rtc sdk
   agora_rtc_fini();
