@@ -16,9 +16,8 @@
 #include <stdatomic.h>  // 需要包含原子操作头文件
 
 // 简单环形缓冲区（建议大小：至少能存 500ms ~ 1s 数据，避免 underrun）
-#define RING_BUFFER_FRAMES (16000 * 5)  // 5秒数据
-#define RING_BUFFER_BYTES  (RING_BUFFER_FRAMES * 2)  // 16bit mono = 2 bytes/sample
-#define RECORD_GAIN_FACTOR 4.0f  // 录音放大倍数
+#define RING_BUFFER_FRAMES (16000 * 6)  // 5秒数据
+#define RECORD_GAIN_FACTOR 3.0f  // 录音放大倍数
 
 typedef struct {
     struct pcm *playback_pcm;
@@ -201,6 +200,7 @@ void playback_init(void) {
 
     atomic_init(&g_playback.write_pos, 0);
     atomic_init(&g_playback.read_pos, 0);
+    g_playback.running = false;
 
     LOGI("播放设备打开成功: card=%u device=%u, 16000 Hz, mono, period_frames=%zu", 
          playback_card, playback_device, g_playback.playback_period_frames);
@@ -707,7 +707,7 @@ int main(int argc, char **argv)
   rtc_channel_options_t channel_options = { 0 };
   memset(&channel_options, 0, sizeof(channel_options));
   channel_options.auto_subscribe_audio = true;
-  channel_options.auto_subscribe_video = true;
+  channel_options.auto_subscribe_video = false;
   channel_options.enable_audio_jitter_buffer = config->enable_audio_jitter_buffer;
   channel_options.enable_audio_mixer = config->enable_audio_mixer;
   channel_options.enable_audio_decode = config->enable_audio_decode;

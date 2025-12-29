@@ -58,18 +58,18 @@ typedef struct {
 
 static const LanguageConfig languages[] = {
     {
-        .code          = "zh-CN",
-        .asr_language  = "zh-CN",
-        .greeting      = "嘿，你今天过得怎么样？",
-        .failure       = "抱歉，我无法回答这个问题。",
-        .agent_id      = "4c5e5bbe-1b94-42ed-92d2-bbb71e86e2c3"
-    },
-    {
         .code          = "en-US",
         .asr_language  = "en-US",
         .greeting      = "Hey, I'm right here. How was your day?",
         .failure       = "Sorry, I can't answer this question.",
         .agent_id      = "917a2c89-cbb8-4bc0-823c-d7afcafb86a5"
+    },
+    {
+        .code          = "zh-CN",
+        .asr_language  = "zh-CN",
+        .greeting      = "嘿，你今天过得怎么样？",
+        .failure       = "抱歉，我无法回答这个问题。",
+        .agent_id      = "4c5e5bbe-1b94-42ed-92d2-bbb71e86e2c3"
     },
     {
         .code          = "ja-JP",
@@ -89,14 +89,14 @@ static const LanguageConfig languages[] = {
 
 // 根据语言代码查找配置（返回 NULL 表示不支持）
 static const LanguageConfig *get_language_config(const char *lang_code) {
-    if (!lang_code) return &languages[0];  // 默认中文
+    if (!lang_code) return &languages[0];  // 默认英文
 
     for (size_t i = 0; i < sizeof(languages) / sizeof(languages[0]); i++) {
         if (strcmp(languages[i].code, lang_code) == 0) {
             return &languages[i];
         }
     }
-    return &languages[0];  // 不支持时 fallback 到中文
+    return &languages[0];  // 不支持时 fallback 到英文
 }
 
 // 动态生成 JOIN 请求的 JSON body
@@ -855,7 +855,9 @@ int agora_test() {
   printf("=== Starting Agora API Tests ===\n\n");
   char agent_id[128] = {0};
   /*
-./agora_module  -i a38a96a8b0674f79b17497c068cb24a8 -c convaiconsole_10086 -u 10086 -d -t 007eJxTYAg9cJZLZMciG7V9x77fND6jdn1HgEpmQqv/xa1XX1lWJJ9WYEg0tki0NEu0SDIwMzdJM7dMMjQ3sTRPNjCzSE4yMkm0qFP0y2wIZGTYJKHNwsgAgSC+MENyfl5ZYiaQLM7PSY03NDCwMGNgAACWrySG
+  -A 1 中文agent
+  -A 2 英文agent
+./agora_module  -i a38a96a8b0674f79b17497c068cb24a8 -c convaiconsole_10086 -u 10086 -A 2 -d -t 007eJxTYAg9cJZLZMciG7V9x77fND6jdn1HgEpmQqv/xa1XX1lWJJ9WYEg0tki0NEu0SDIwMzdJM7dMMjQ3sTRPNjCzSE4yMkm0qFP0y2wIZGTYJKHNwsgAgSC+MENyfl5ZYiaQLM7PSY03NDCwMGNgAACWrySG
   */
   char *token =
       "007eJxTYCgt3Jn74MX0GytOranS3bz8dNL7vqvqT38lLGZNjvj8a+4jBYZEY4tES7NEiyQDM3OTNHPLJENzE0vzZAMzi+QkIxOgeL91ZkMgI4MdsyILIwMEgvjCDMn5eWWJmUCyOD8nNd7QwMDCjIEBAMM9J08=";
