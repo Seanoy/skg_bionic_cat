@@ -115,7 +115,7 @@ static char *build_join_json_body(const char *channel,
         "\"agent_rtc_uid\":\"%u\","
         "\"remote_rtc_uids\":[\"*\"],"
         "\"asr\": {"
-          "\"language\": \"en-US\""
+          "\"language\": \"%s\""
         "},"
         "\"advanced_features\": {\"enable_aivad\": false},"
         "\"vad\": {"
@@ -155,6 +155,7 @@ static char *build_join_json_body(const char *channel,
         channel,                    // channel
         token,                      // token
         uid,                        // agent_rtc_uid
+        lang->asr_language,         // asr_language
         lang->greeting,             // greeting_message
         lang->failure,              // failure_message
         lang->agent_id              // agentId
