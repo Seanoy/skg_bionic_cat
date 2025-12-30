@@ -15,11 +15,9 @@
 #define HOST "api.agora.io"
 #define PORT 443
 #define BUFFER_SIZE 8192
-#define APP_ID "a38a96a8b0674f79b17497c068cb24a8"
-#define AUTH_HEADER                                                            \
-  "ODc4YWIzNzk0MmRhNGNkNTg4YzYzNDMzYmE4M2IyZDM6NGI2MWU0YTViN2Q3NGE3NGE1Mjg4Ym" \
-  "Q0YzM5ZWQyZTc="
-#define BASE_PATH "/cn/api/conversational-ai-agent/v2/projects"
+#define APP_ID "7aa8a837d8794b7090945475395c6317"
+#define AUTH_HEADER "YzNjMzZiZjM0NTE0NDNhNjgxYTk3YTcwZDMyZTA4MjQ6NzE0NWQ1NzE0MmQ2NGExNTg2ZWM3NTk1YTBkMzU4NjY="
+#define BASE_PATH "/api/conversational-ai-agent/v2/projects"
 
 // 配置结构体
 typedef struct {
@@ -116,7 +114,9 @@ static char *build_join_json_body(const char *channel,
         "\"token\":\"%s\","
         "\"agent_rtc_uid\":\"%u\","
         "\"remote_rtc_uids\":[\"*\"],"
-        "\"asr\":{\"vendor\": \"fengming\",\"language\":\"%s\"},"
+        "\"asr\": {"
+          "\"language\": \"en-US\""
+        "},"
         "\"advanced_features\": {\"enable_aivad\": false},"
         "\"vad\": {"
           "\"interrupt_duration_ms\": 160,"
@@ -136,24 +136,18 @@ static char *build_join_json_body(const char *channel,
           "\"params\":{"
             "\"extendData\":{},"
             "\"agentId\": \"%s\","
-            "\"sampleRate\":16000,"
+            "\"sampleRate\":32000,"
             "\"response_mode\":\"streaming\","
             "\"conversation_id\":\"skg\","
             "\"user\":\"skg_user1\""
           "}"
         "},"
         "\"tts\": {"
-          "\"vendor\": \"bytedance\","
-          "\"params\": {"
-            "\"token\": \"YmmCAIH-c_4gmpmEH8IwOkG5bd1kuSeC\","
-            "\"app_id\": \"6435943786\","
-            "\"cluster\": \"volcano_tts\","
-            "\"voice_type\": \"BV001_streaming\","
-            "\"speed_ratio\": 1,"
-            "\"volume_ratio\": 1,"
-            "\"pitch_ratio\": 1,"
-            "\"emotion\": \"\""
-          "}"
+            "\"vendor\": \"null\","
+            "\"enable\": false,"
+            "\"params\":{"
+               "\"sample_rate\":32000"
+            "}"
         "}"
       "}"
     "}",
@@ -161,7 +155,6 @@ static char *build_join_json_body(const char *channel,
         channel,                    // channel
         token,                      // token
         uid,                        // agent_rtc_uid
-        lang->asr_language,         // asr language
         lang->greeting,             // greeting_message
         lang->failure,              // failure_message
         lang->agent_id              // agentId
@@ -857,7 +850,7 @@ int agora_test() {
   /*
   -A 1 中文agent
   -A 2 英文agent
-./agora_module  -i a38a96a8b0674f79b17497c068cb24a8 -c convaiconsole_10086 -u 10086 -A 2 -d -t 007eJxTYAg9cJZLZMciG7V9x77fND6jdn1HgEpmQqv/xa1XX1lWJJ9WYEg0tki0NEu0SDIwMzdJM7dMMjQ3sTRPNjCzSE4yMkm0qFP0y2wIZGTYJKHNwsgAgSC+MENyfl5ZYiaQLM7PSY03NDCwMGNgAACWrySG
+./agora_module  -i a38a96a8b0674f79b17497c068cb24a8 -c convaiconsole_10086 -u 10086 -A 2 -d -t 007eJxTYFi8aMduBufXOZ9186dpskkxttgZ5BxoaUmVeXvvrfxB54sKDOaJiRaJFsbmKRbmliZJ5gaWBpYmpibmpsaWpslmxobmz0uCMxsCGRnkXvIxMTJAIIgvzJCcn1eWmAkki/NzUuMNDQwszBgYAOI0Isw=
   */
   char *token =
       "007eJxTYCgt3Jn74MX0GytOranS3bz8dNL7vqvqT38lLGZNjvj8a+4jBYZEY4tES7NEiyQDM3OTNHPLJENzE0vzZAMzi+QkIxOgeL91ZkMgI4MdsyILIwMEgvjCDMn5eWWJmUCyOD8nNd7QwMDCjIEBAMM9J08=";
