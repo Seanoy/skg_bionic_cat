@@ -19,6 +19,13 @@
 #define RING_BUFFER_FRAMES (16000 * 6)  // 5秒数据
 #define RECORD_GAIN_FACTOR 3.0f  // 录音放大倍数
 
+// 海外配置
+// #define APP_ID_OVERSEAS "7aa8a837d8794b7090945475395c6317"
+#define AUTH_HEADER_OVERSEAS "YzNjMzZiZjM0NTE0NDNhNjgxYTk3YTcwZDMyZTA4MjQ6NzE0NWQ1NzE0MmQ2NGExNTg2ZWM3NTk1YTBkMzU4NjY="
+
+// 国内配置
+// #define APP_ID "a38a96a8b0674f79b17497c068cb24a8"
+#define AUTH_HEADER "ODc4YWIzNzk0MmRhNGNkNTg4YzYzNDMzYmE4M2IyZDM6NGI2MWU0YTViN2Q3NGE3NGE1Mjg4YmQ0YzM5ZWQyZTc="
 typedef struct {
     struct pcm *playback_pcm;
     void *playback_buffer;
@@ -665,6 +672,15 @@ int main(int argc, char **argv)
     break;
   }
 
+  // 初始化配置
+  if (config->enable_overseas) {
+    LOGI("Using in overseas %s", p_appid);
+    agora_config_init(p_appid, AUTH_HEADER_OVERSEAS, config->enable_overseas);
+  } else {
+    LOGI("Using in domestic %s", p_appid);
+    agora_config_init(p_appid, AUTH_HEADER, config->enable_overseas);
+  }
+
   // 3. Set Global private parameters
   if (config->local_ap && config->local_ap[0]) {
     snprintf(priv_params, sizeof(priv_params), "{\"rtc.local_ap_list\": %s}", config->local_ap);
@@ -757,10 +773,7 @@ int main(int argc, char **argv)
   printf("=== Starting Agora API Tests ===\n\n");
   char agent_id[128] = {0};
 
-  // char *token = "007eJxTYLCfmpvH8lV+6fzCuzEXq8uXF+RbPnvC87iv3XLzbpEZxyUUGBKNLRItzRItkgzMzE3SzC2TDM1NLM2TDcwskpOMTBIttupYZTYEMjJssOVkYmSAQBBfmCE5P68sMRNIFufnpMYbGhhYmDEwAABa/CPx";
-  // char *channel = "convaiconsole_10086";
- // ./agora_module -i a38a96a8b0674f79b17497c068cb24a8 -t 007eJxTYCgt3Jn74MX0GytOranS3bz8dNL7vqvqT38lLGZNjvj8a+4jBYZEY4tES7NEiyQDM3OTNHPLJENzE0vzZAMzi+QkIxOgeL91ZkMgI4MdsyILIwMEgvjCDMn5eWWJmUCyOD8nNd7QwMDCjIEBAMM9J08= -c convaiconsole_10086 -u 10086
-  // 创建对话式智能体
+ // 创建对话式智能体
   printf("Sending JOIN request...\n");
   uint32_t remote_uid = 251156;
   int ret = 0;

@@ -1,6 +1,8 @@
 #ifndef AGORA_SERVER_H
 #define AGORA_SERVER_H
 
+#include <stdbool.h>
+
 int send_join_request(const char *token, const char *channel, uint32_t uid,
                       char *out_agent_id, size_t buf_size,
                       const char *language_code);
@@ -10,5 +12,5 @@ int send_get_status_request(char *agent_id);
 int send_get_list_request(char *agent_id);
 void agora_openssl_init(void);
 void agora_openssl_deinit(void);
-
+void agora_config_init(const char *app_id, const char *auth_header, bool is_overseas);
 #endif // AGORA_SERVER_H

@@ -15,16 +15,16 @@
 #define HOST "api.agora.io"
 #define PORT 443
 #define BUFFER_SIZE 8192
-#define APP_ID "7aa8a837d8794b7090945475395c6317"
-#define AUTH_HEADER "YzNjMzZiZjM0NTE0NDNhNjgxYTk3YTcwZDMyZTA4MjQ6NzE0NWQ1NzE0MmQ2NGExNTg2ZWM3NTk1YTBkMzU4NjY="
-#define BASE_PATH "/api/conversational-ai-agent/v2/projects"
+#define BASE_PATH "/cn/api/conversational-ai-agent/v2/projects"
+#define BASE_PATH_OVERSEAS "/api/conversational-ai-agent/v2/projects"
 
 // 配置结构体
 typedef struct {
-  const char *host;
+  char auth_header[128];
+  char host[32];
+  char app_id[64];
+  char base_path[128];
   int port;
-  const char *app_id;
-  const char *auth_header;
 } Config;
 
 // 请求结构体
@@ -43,8 +43,7 @@ typedef struct {
 } HttpResponse;
 
 // 全局配置
-static Config config = {
-    .host = HOST, .port = PORT, .app_id = APP_ID, .auth_header = AUTH_HEADER};
+static Config config = {0};
 
 typedef struct {
     const char *code;           // 如 "zh-CN", "en-US"
@@ -192,6 +191,40 @@ const char *speak_message_json_data =
     "}";
 
 const char *interrupt_agent_json_data = "{}";
+
+/* 
+ * 外部初始化配置
+ * @param app_id          你的项目 App ID（必须由调用方提供）
+ * @param auth_header     Basic Auth 头部值（username:password 经过 base64 编码）
+ * @param is_overseas     是否海外版本（true 表示海外，base_path 不带 /cn）
+ */
+void agora_config_init(const char *app_id, const char *auth_header, bool is_overseas) {
+    if (!app_id || !auth_header) {
+        fprintf(stderr, "agora_config_init: app_id or auth_header is NULL\n");
+        return;
+    }
+
+    strncpy(config.app_id, app_id, sizeof(config.app_id) - 1);
+    strncpy(config.auth_header, auth_header, sizeof(config.auth_header) - 1);
+    strcpy(config.host, HOST);
+    config.port = PORT;
+
+    // 根据是否海外选择 base_path
+    if (is_overseas) {
+        snprintf(config.base_path, sizeof(config.base_path), "%s", BASE_PATH_OVERSEAS);
+    } else {
+        snprintf(config.base_path, sizeof(config.base_path), "%s", BASE_PATH);
+    }
+
+    // 确保字符串安全结束
+    config.app_id[sizeof(config.app_id)-1] = '\0';
+    config.auth_header[sizeof(config.auth_header)-1] = '\0';
+    config.base_path[sizeof(config.base_path)-1] = '\0';
+
+    printf("agora_config_init: app_id=%s, auth_header=%s, base_path=%s, host=%s:%d %s region\n",
+           config.app_id, config.auth_header, config.base_path, config.host, config.port,
+           is_overseas ? "OVERSEAS" : "DOMESTIC");
+}
 
 // 创建SSL上下文
 static SSL_CTX *create_ssl_context(void) {
@@ -405,10 +438,10 @@ static HttpResponse *send_https_request(const HttpRequest *req,
   // 构建完整路径
   char full_path[1024];
   if (agent_id_for_path && strlen(agent_id_for_path) > 0) {
-    snprintf(full_path, sizeof(full_path), req->path, config.app_id,
+    snprintf(full_path, sizeof(full_path), req->path, config.base_path, config.app_id,
              agent_id_for_path);
   } else {
-    snprintf(full_path, sizeof(full_path), req->path, config.app_id);
+    snprintf(full_path, sizeof(full_path), req->path, config.base_path, config.app_id);
   }
 
   HttpRequest complete_req = {.method = req->method,
@@ -570,7 +603,7 @@ int send_join_request(const char *token, const char *channel, uint32_t uid,
 
     HttpRequest req = {
         .method = "POST",
-        .path = BASE_PATH "/%s/join",
+        .path = "%s/%s/join",
         .body = json_body,
         .content_type = "Content-Type: application/json\r\n",
     };
@@ -619,7 +652,7 @@ int send_leave_request(char *agent_id) {
   }
 
   HttpRequest req = {.method = "POST",
-                     .path = BASE_PATH "/%s/agents/%s/leave",
+                     .path = "%s/%s/agents/%s/leave",
                      .body = NULL,
                      .content_type = NULL};
 
@@ -651,7 +684,7 @@ int send_update_request(char *agent_id, char *token) {
   }
 
   HttpRequest req = {.method = "POST",
-                     .path = BASE_PATH "/%s/agents/%s/update",
+                     .path = "%s/%s/agents/%s/update",
                      .body = json_body,
                      .content_type = "Content-Type: application/json\r\n"};
 
@@ -682,7 +715,7 @@ int send_get_status_request(char *agent_id) {
   }
 
   HttpRequest req = {.method = "GET",
-                     .path = BASE_PATH "/%s/agents/%s",
+                     .path = "%s/%s/agents/%s",
                      .body = NULL,
                      .content_type = NULL};
 
@@ -708,7 +741,7 @@ int send_get_status_request(char *agent_id) {
 
 int send_get_list_request(char *agent_id) {
   HttpRequest req = {.method = "GET",
-                     .path = BASE_PATH "/%s/agents",
+                     .path = "%s/%s/agents",
                      .body = NULL,
                      .content_type = NULL};
 
@@ -739,7 +772,7 @@ int send_speak_request(char *agent_id) {
   }
 
   HttpRequest req = {.method = "POST",
-                     .path = BASE_PATH "/%s/agents/%s/speak",
+                     .path = "%s/%s/agents/%s/speak",
                      .body = speak_message_json_data,
                      .content_type = "Content-Type: application/json\r\n"};
 
@@ -772,7 +805,7 @@ int send_interrupt_request(char *agent_id) {
 
   // 根据文档，打断接口的请求体是空对象 {}
   HttpRequest req = {.method = "POST",
-                     .path = BASE_PATH "/%s/agents/%s/interrupt",
+                     .path = "%s/%s/agents/%s/interrupt",
                      .body = interrupt_agent_json_data,
                      .content_type = "Content-Type: application/json\r\n"};
 
@@ -806,7 +839,7 @@ int send_get_history_request(char *agent_id) {
   }
 
   HttpRequest req = {.method = "GET",
-                     .path = BASE_PATH "/%s/agents/%s/history",
+                     .path = "%s/%s/agents/%s/history",
                      .body = NULL,
                      .content_type = NULL};
 

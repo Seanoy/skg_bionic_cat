@@ -74,6 +74,9 @@ typedef struct {
   bool domain_limit;
   bool lan_accelerate;
   int conn_cnt;
+
+  // skg config
+  bool enable_overseas; // 海外版本
 } app_config_t;
 
 static void app_print_usage(int argc, char **argv)
@@ -115,6 +118,7 @@ static void app_print_usage(int argc, char **argv)
   LOGS(" -d, --audio-decode        : enable audio decode");
   LOGS(" -R, --recv-only           : do not send video and audio data");
   LOGS(" -D, --domain-limit        : domain limit is enabled");
+  LOGS(" -o, --overseas            : using in overseas");
 
   // long options
   LOGS(" --pcm-sample-rate         : sample rate for the input PCM data; only valid when audio type is PCM");
@@ -157,6 +161,7 @@ static void app_print_config(app_config_t *config) {
 	LOGS("<advanced config info>    -");
 	LOGS("  received_data_only      : %d", config->receive_data_only);
   LOGS("  lan-accelerate          : %d", config->lan_accelerate);
+  LOGS("  enable_overseas         : %d", config->enable_overseas);
 	LOGS("---------------app config show end-----------------------");
 }
 
@@ -171,7 +176,7 @@ static int app_parse_args(int argc, char **argv, app_config_t *config)
     LONG_OPT_PCM_DURATION,
     LONG_OPT_AUDIO_AI_QOS,
   };
-  const char *av_short_option = "hi:t:c:u:U:v:a:C:f:S:s:A:gmRl:dDdL:j";
+  const char *av_short_option = "hi:t:c:u:U:v:a:C:f:S:s:A:gmRl:dDdL:j:o";
   int av_option_flag = 0;
   const struct option av_long_option[] = { { "help", 0, NULL, 'h' },
                                            { "app-id", 1, NULL, 'i' },
@@ -189,6 +194,7 @@ static int app_parse_args(int argc, char **argv, app_config_t *config)
                                            { "audio-jitter-buffer", 0, NULL, 'j' },
                                            { "audio-mixer", 0, NULL, 'm' },
                                            { "audio-decode", 0, NULL, 'd' },
+                                           { "overseas", 0, NULL, 'o' },
                                            { "recv-only", 0, NULL, 'R' },
                                            { "license", 1, NULL, 'l' },
                                            { "log-level", 1, NULL, 'L' },
@@ -259,6 +265,9 @@ static int app_parse_args(int argc, char **argv, app_config_t *config)
       break;
     case 'd':
       config->enable_audio_decode = true;
+      break;
+    case 'o':
+      config->enable_overseas = true;
       break;
     case 'R':
       config->receive_data_only = true;
