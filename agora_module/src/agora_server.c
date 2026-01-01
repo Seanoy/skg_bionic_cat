@@ -110,19 +110,14 @@ static char *build_join_json_body(const char *channel,
         "\"name\":\"%s\","
         "\"properties\":{"
         "\"channel\":\"%s\","
-        "\"token\":\"%s\","
+        "\"token\":\"\","
         "\"agent_rtc_uid\":\"%u\","
         "\"remote_rtc_uids\":[\"*\"],"
         "\"asr\": {"
           "\"language\": \"%s\""
         "},"
         "\"advanced_features\": {\"enable_aivad\": false},"
-        "\"vad\": {"
-          "\"interrupt_duration_ms\": 160,"
-          "\"prefix_padding_ms\": 300,"
-          "\"silence_duration_ms\": 480,"
-          "\"threshold\": 0.5"
-        "},"
+        "\"turn_detection\": {\"interrupt_mode\": \"ignore\"},"
         "\"llm\":{"
           "\"url\":\"https://workflow.amazingchat.ai/api/audio/chat\","
           "\"api_key\":\"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhNzc3ZTZhNi03ZDYyLTRiOTYtODU5MC0xMWJjYjdlYjkxZWQiLCJuYW1lIjoidGhpcmQgY2FsbCIsInR5cGUiOiJhcGlfa2V5IiwiaWF0IjoxNzY2MDMwNzQxLCJqdGkiOiJlZjQ4YjE5ZC1kYTQ1LTQzMDEtODNiYS03NWQxYTMyZjlmZjYifQ.yWyTMYF_UJy7H6iPmYQDZdzFAhX0Cvly7HXWW5yVP8w\","
@@ -152,7 +147,6 @@ static char *build_join_json_body(const char *channel,
     "}",
         channel,                    // name
         channel,                    // channel
-        token,                      // token
         uid,                        // agent_rtc_uid
         lang->asr_language,         // asr_language
         lang->greeting,             // greeting_message
@@ -590,7 +584,7 @@ int send_join_request(const char *token, const char *channel, uint32_t uid,
                       char *out_agent_id, size_t buf_size,
                       const char *language_code)
 {
-    if (!token || !channel || !out_agent_id || buf_size < 128) {
+    if (!channel || !out_agent_id || buf_size < 128) { // 可以不带token，取决于project是否testing mode
         fprintf(stderr, "Invalid parameters for join request\n");
         return -1;
     }
@@ -600,6 +594,7 @@ int send_join_request(const char *token, const char *channel, uint32_t uid,
         fprintf(stderr, "Failed to build JSON body\n");
         return -1;
     }
+    printf("Join request JSON body:\n%s\n", json_body);
 
     HttpRequest req = {
         .method = "POST",

@@ -17,7 +17,7 @@
 
 // 简单环形缓冲区（建议大小：至少能存 500ms ~ 1s 数据，避免 underrun）
 #define RING_BUFFER_FRAMES (16000 * 6)  // 5秒数据
-#define RECORD_GAIN_FACTOR 3.0f  // 录音放大倍数
+#define RECORD_GAIN_FACTOR 15.0f  // 录音放大倍数
 
 // 海外配置
 // #define APP_ID_OVERSEAS "7aa8a837d8794b7090945475395c6317"
@@ -779,19 +779,7 @@ int main(int argc, char **argv)
   int ret = 0;
   if (ret = send_join_request(p_token, config->p_channel, remote_uid, agent_id, sizeof(agent_id), g_app.desired_lang) != 0) {
     printf("✗ JOIN request failed\n");
-    if (ret == 1) {
-      printf("Agent already exists, using existing agent_id: %s\n", agent_id);
-      if (strlen(agent_id) > 0 && send_leave_request(agent_id) != 0) {
-        printf("✗ LEAVE request failed\n");
-        goto exit;
-      }
-      if (ret = send_join_request(p_token, config->p_channel, remote_uid, agent_id, sizeof(agent_id), g_app.desired_lang) != 0) {
-        printf("✗ JOIN request failed again\n");
-        goto exit;
-      }
-    } else {
-      goto exit;
-    }
+    goto exit;
   }
 
   // 7. Set subscription rules for audio and video for a specific user
