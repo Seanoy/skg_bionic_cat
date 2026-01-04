@@ -17,7 +17,7 @@
 
 // 简单环形缓冲区（建议大小：至少能存 500ms ~ 1s 数据，避免 underrun）
 #define RING_BUFFER_FRAMES (16000 * 6)  // 5秒数据
-#define RECORD_GAIN_FACTOR 15.0f  // 录音放大倍数
+#define RECORD_GAIN_FACTOR 16.0f  // 录音放大倍数
 
 // 海外配置
 // #define APP_ID_OVERSEAS "7aa8a837d8794b7090945475395c6317"
